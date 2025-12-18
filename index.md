@@ -415,7 +415,7 @@ Before STAR can align RNA-seq reads, it must first build a genome index from the
 ```
 cd "$VSC_DATA/Bioinfo_course"
 mkdir -p Ref_genome && cd Ref_genome
-module load STAR/2.7.3a-GCCcore-6.4.0
+module load STAR/2.7.10a-GCC-10.3.0
 
 wget https://ftp.ensembl.org/pub/current/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
 wget https://ftp.ensembl.org/pub/current/gtf/homo_sapiens/Homo_sapiens.GRCh38.115.chr.gtf.gz
@@ -431,6 +431,59 @@ STAR --runThreadN 8 \
 ```
 Note: sjdbOverhang = readLength − 1.
 
+This indexing step only needs to be done once for each genome version and may take several minutes depending on the available computing resources. 
+
+** More explanation about Genome Index Files?**
+
+When STAR is run with `--runMode genomeGenerate`, it creates a directory containing all files required for alignment. These files together make up the **STAR genome index**.
+
+**Genome**
+- Binary-encoded reference genome.
+- Contains the full concatenated genomic sequence in STAR’s internal format.
+- One of the core index files required for alignment.
+
+**SA**
+- STAR’s suffix array, used for fast seed searching.
+- Typically large (comparable to or larger than `Genome`).
+
+**SAindex**
+- Supporting index for the suffix array.
+- Speeds up initial genome search steps.
+
+**Chromosome Metadata Files**
+
+| File | Description |
+|------|-------------|
+| `chrName` | Names of all chromosomes included in the index. |
+| `chrLength` | Length of each chromosome. |
+| `chrStart` | Offsets of chromosomes within the concatenated genome. |
+| `chrNameLength` | Length of each chromosome name string. |
+
+These files help STAR convert between internal coordinates and chromosome coordinates.
+
+**Annotation-Derived Files (if a GTF is provided)
+
+**sjdbList.out.tab**
+- List of splice junctions extracted from the annotation.
+- Used to improve spliced read alignment.
+
+**sjdbInfo.txt**
+- Metadata describing how splice junctions were processed and incorporated.
+
+**sjdbN.txt**
+- Total number of splice junctions included.
+
+**Optional (STAR version–dependent)**
+- `geneInfo.tab`
+- `transcriptInfo.tab`
+- `exonInfo.tab`  
+These contain tables summarizing gene, transcript, and exon structure.
+
+**genomeParameters.txt
+- Records the parameters used during index generation.
+- Includes values for genome size, number of chromosomes, STAR version, and indexing parameters such as `genomeSAindexNbases` and `sjdbOverhang`.
+
+
 **Aligning Reads to the Genome with STAR**
 
 Once the reference genome index is prepared, we can align our trimmed FASTQ reads to the genome using STAR. In this step, STAR takes each cleaned sequencing read, finds the best matching location(s) in the indexed genome, and produces a **sorted BAM** file that records the exact alignment. Because RNA-seq reads may span exon–exon junctions, STAR performs splice-aware alignment, ensuring accurate mapping across introns. 
@@ -441,30 +494,56 @@ Once the reference genome index is prepared, we can align our trimmed FASTQ read
 
 We also enable --quantMode GeneCounts, which instructs STAR to generate preliminary per-gene read counts that will later help verify the library’s strandness. The output of this step includes aligned BAM files, gene count summaries, and STAR logs, all stored in the MS_microglia_STAR_aligned directory and ready for downstream quantification and differential expression analysis.
 
+This command aligns trimmed RNA-seq reads to the reference genome using STAR and produces sorted BAM files and gene-level count summaries for each sample.
+
+
 ```
-module load STAR/2.7.3a-GCCcore-6.4.0
+module load STAR/2.7.10a-GCC-10.3.0
 IDX="$VSC_DATA/Bioinfo_course/Ref_genome"
 IN="$VSC_DATA/Bioinfo_course/MS_microglia_fastp"
 OUT="$VSC_DATA/Bioinfo_course/MS_microglia_STAR_aligned"
 mkdir -p "$OUT"
 
-for fq in "$IN"/*.sub5M.trimmed.fastq.gz; do
-  s=$(basename "$fq" .sub5M.trimmed.fastq.gz)
-  echo "Aligning $s ..."
-  STAR --runThreadN 8 \
-       --genomeDir "$IDX" \
-       --readFilesIn "$fq" \
-       --readFilesCommand zcat \
-       --outFileNamePrefix "$OUT/${s}." \
-       --outSAMtype BAM SortedByCoordinate \
-       --quantMode GeneCounts
-done
-```
-Check metrics:
+for fq in "$IN"/*.sub5M.trimmed.fastq.gz; do s=$(basename "$fq" .sub5M.trimmed.fastq.gz); echo "Aligning $s ..."; STAR --runThreadN 8 --genomeDir "$IDX" --readFilesIn "$fq" --readFilesCommand zcat --outFileNamePrefix "$OUT/${s}." --outSAMtype BAM SortedByCoordinate --quantMode GeneCounts; done
 
 ```
-less "$OUT"/<sample>.Log.final.out
+STAR/2.7.10a is loaded.
+
+GCC-10.3.0 is simply the compiler version used to build the STAR binary at the cluster.
+
+**STAR arguments**
+
+**--runThreadN 8**
+Uses 8 CPU threads to speed up alignment.
+
+**--genomeDir "$IDX"**
+Points to the STAR genome index directory.
+
+**--readFilesIn "$fq"**
+Specifies the input FASTQ file.
+
+**--readFilesCommand zcat**
+Decompresses .gz files on the fly during alignment.
+
+**--outFileNamePrefix "$OUT/${s}."**
+Sets the output filename prefix using the sample name.
+
+**--outSAMtype BAM SortedByCoordinate**
+Outputs alignments as a BAM file sorted by genomic coordinate.
+
+**--quantMode GeneCounts**
+Generates gene-level read counts for each sample.
+
+Check metrics in the STAR output directory:
+
 ```
+cd $VSC_DATA/Bioinfo_course/MS_microglia_STAR_aligned
+
+cat SRR6849240.Log.final.out
+
+```
+The **cat** (concatenate) command in Linux displays file contents.
+
 
 <img src="assets/Log_final_out.png" alt="Log_final_out" width="700">
 
@@ -477,15 +556,11 @@ A BAM file (Binary Alignment/Map) is the compressed binary version of a SAM file
 To view just the first few alignment lines:
 
 ```
-module load SAMtools/1.18-GCC-12.3.0
-samtools view yourfile.bam | head
+module load SAMtools/1.13-GCC-10.3.0
+samtools view SRR6849240.Aligned.sortedByCoord.out.bam | head -20
 ```
-To see the header (metadata, reference names, and alignment settings):
 
-```
-samtools view -H yourfile.bam
-```
-These commands let you quickly verify that the alignments look correct without scrolling through the entire file.
+The command will let you quickly look at the first 20 alignments, without scrolling through the entire file.
 
 **Example interpretation of a BAM file**
 ```less
