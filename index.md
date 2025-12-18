@@ -156,13 +156,13 @@ For more information about the VSC system and its usage, please see:
 
 Request a VSC account and apply for introductory credits to run your own jobs. If you manage a research group, apply for project credits instead to get computing resources for your team.
 
-[Apply for your VSC account](https://docs.vscentrum.be/accounts/vsc_account.html#applying-for-your-vsc-account), Select **Hasselt University** when prompted.
+-[Apply for your VSC account](https://docs.vscentrum.be/accounts/vsc_account.html#applying-for-your-vsc-account), Select **Hasselt University** when prompted.
 
-[Request introduction credits for your individual analysis](https://admin.kuleuven.be/icts/onderzoek/hpc/request-introduction-credits)
+-[Request introduction credits for your individual analysis](https://admin.kuleuven.be/icts/onderzoek/hpc/request-introduction-credits)
 
-[Request project credits if your project analysis lasts more than 6 months or multiple researchers in your research group require to analyse their data at VSC](https://admin.kuleuven.be/icts/onderzoek/hpc/request-project-credits)
+-[Request project credits if your project analysis lasts more than 6 months or multiple researchers in your research group require to analyse their data at VSC](https://admin.kuleuven.be/icts/onderzoek/hpc/request-project-credits)
 
-[Once your project group has been created and you have received your allocated core-hour credits for that and if your generating data exceeds 76 GB, you or your superviser should request staging storage for your group at VSC by specifying the required storage](https://admin.kuleuven.be/icts/onderzoek/hpc/hpc-storage)
+-[Once your project group has been created and you have received your allocated core-hour credits for that and if your generating data exceeds 76 GB, you or your superviser should request staging storage for your group at VSC by specifying the required storage](https://admin.kuleuven.be/icts/onderzoek/hpc/hpc-storage)
 
 
 Login to OnDemand, and click on **Partner organization** and select **Hasselt University**: [VSC OnDemand Portal](https://ondemand.hpc.kuleuven.be/)
@@ -855,7 +855,7 @@ This way, we correct the sequencing depth without being distorted by highly expr
 - Launch **RStudio Server** on the **wICE cluster** using **R/4.4.1-gfbf-2023b** through onDemand VSC portal.  
 - Load the module: `R-bundle-Bioconductor` (for additional Bioconductor packages).
 - **Partition:** `batch_icelake`
-- **Account:** `lp_h_edu_bioinformatics2025`
+- **Account:** ` your own intro_VSC or your project account`
 - **Walltime:** 1 hour
 - **Number of nodes:** 1
 - **Processes per node:** 4
