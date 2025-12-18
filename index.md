@@ -531,16 +531,38 @@ So even though RNA comes from only one DNA strand, the library prep protocol det
 ```
 cd "$VSC_DATA/Bioinfo_course/MS_microglia_STAR_aligned"
 
-OUT=strandness_from_STAR.tsv
-printf "sample\tforward_counts(col3)\treverse_counts(col4)\tforward_frac\treverse_frac\n" > "$OUT"
-for f in *.ReadsPerGene.out.tab; do
-  s=$(basename "$f" .ReadsPerGene.out.tab)
-  awk -v S="$s" 'NR>4 {f+=$3; r+=$4} END {t=f+r; if(t==0)t=1;
-    printf "%s\t%.0f\t%.0f\t%.3f\t%.3f\n", S, f, r, f/t, r/t}' "$f"
-done >> "$OUT"
-cat "$OUT"
+OUT=strandness_from_STAR.tsv; printf "sample\tforward_counts(col3)\treverse_counts(col4)\tforward_frac\treverse_frac\n" > "$OUT"; for f in *.ReadsPerGene.out.tab; do s=$(basename "$f" .ReadsPerGene.out.tab); awk -v S="$s" 'NR>4 {f+=$3; r+=$4} END {t=f+r; if(t==0)t=1; printf "%s\t%.0f\t%.0f\t%.3f\t%.3f\n", S, f, r, f/t, r/t}' "$f"; done >> "$OUT"; cat "$OUT"
+
 ```
-Interpretation: reverse fraction ≫ forward → use -s 2 downstream.
+**Strandness summary command arguments**
+
+**awk -v S="$s"**
+Passes the sample name to awk as a variable. awk in Linux is a powerful command-line tool used for searching, filtering, and processing text files.
+
+**'NR>4 {f+=$3; r+=$4}**
+Skips the first 4 header lines and sums:
+
+**column 3 → forward-strand counts**
+
+**column 4 → reverse-strand counts**
+
+**END {t=f+r; if(t==0)t=1; ... }**
+Calculates the total number of reads and avoids division by zero.
+
+**printf "%s\t%.0f\t%.0f\t%.3f\t%.3f\n", S, f, r, f/t, r/t**
+Prints one line per sample showing:
+forward read count
+reverse read count
+fraction of forward reads
+fraction of reverse reads
+
+**done >> "$OUT"**
+Appends all results to the output file.
+
+**cat "$OUT"**
+Prints the final table to the terminal.
+
+Then if reverse fraction is higher than forward → use **-s 2** arguments at featureCounts running.
 
 ## Step 7 - Quantifying Gene Expression by featureCounts {#step-7-quantifying-gene-expression-by-featurecounts}
 
@@ -559,30 +581,47 @@ Although featureCounts is one of the fastest and most widely used tools for coun
 In this step, we generate gene-level read counts from the aligned BAM files using featureCounts, a fast and widely used quantification tool from the Subread package. featureCounts assigns aligned reads to genomic features (typically exons) based on the annotation file (GTF). We specify -s 2 because our libraries are reverse-stranded, as confirmed in the previous step. Only reads aligning to the antisense strand of genes will be counted. The command produces a raw count table (featureCounts_counts.txt) that includes metadata columns and full file paths; therefore, an additional awk script is used to clean the matrix, remove extra columns, and extract sample names. The result in **featureCounts_counts_matrix.tsv** is a clean, tab-delimited matrix suitable for downstream analysis in DESeq2, edgeR, or similar tools.
 
 ```
-module load Subread
-GTF="$VSC_DATA/Bioinfo_course/Ref_genome/Homo_sapiens.GRCh38.115.chr.gtf"
+module load Subread/2.0.3-GCC-10.3.0
+GTF="/scratch/leuven/377/vsc37707/Bioinfo_course_scratch/Ref_genome/Homo_sapiens.GRCh38.115.chr.gtf"
 ALIGN_DIR="$VSC_DATA/Bioinfo_course/MS_microglia_STAR_aligned"
 OUTDIR="$VSC_DATA/Bioinfo_course/MS_microglia_featureCounts"
 mkdir -p "$OUTDIR"
 
-featureCounts -T 8 -s 2 -t exon -g gene_id \
-  -a "$GTF" \
-  -o "$OUTDIR/featureCounts_counts.txt" \
-  "$ALIGN_DIR"/*.Aligned.sortedByCoord.out.bam
+featureCounts -T 8 -s 2 -t exon -g gene_id -a "$GTF" -o "$OUTDIR/featureCounts_counts.txt" "$ALIGN_DIR"/*.Aligned.sortedByCoord.out.bam
 
-awk 'NR==2{
-        printf "gene"
-        for(i=7;i<=NF;i++){
-          g=$i; sub(/^.*\//,"",g); sub(/\.Aligned\.sortedByCoord\.out\.bam$/,"",g)
-          printf "\t" g
-        } printf "\n"; next
-     }
-     NR>2{
-        printf "%s", $1; for(i=7;i<=NF;i++) printf "\t%s", $i; printf "\n"
-     }' \
-  "$OUTDIR/featureCounts_counts.txt" > "$OUTDIR/featureCounts_counts_matrix.tsv"
 ```
 
+**featureCounts command arguments**
+
+**-T 8**
+Uses 8 CPU threads to speed up counting.
+
+**-s 2**
+Indicates the data is reverse-stranded
+(0 = unstranded, 1 = forward-stranded, 2 = reverse-stranded)
+
+**-t exon**
+Counts reads that overlap exons.
+
+**-g gene_id**
+Groups exons by the gene_id attribute in the GTF file so counts are summarized per gene.
+
+**-a "$GTF"**
+Specifies the gene annotation file (GTF format).
+
+**-o "$OUTDIR/featureCounts_counts.txt"**
+Sets the output file name.
+
+**"$ALIGN_DIR"/*.Aligned.sortedByCoord.out.bam**
+Inputs all sorted BAM alignment files in the directory.
+
+
+This next command line reformats the output file from featureCounts into a clean count matrix suitable for downstream analysis in R. The script extracts gene IDs and sample names from the featureCounts output, removes file path information from the column headers, and outputs a table where rows represent genes and columns represent samples with their corresponding read counts. The result is saved as a tab-separated file (featureCounts_counts_matrix.tsv) that can be directly loaded into R for differential expression analysis.
+
+```
+awk 'NR==2{printf "gene"; for(i=7;i<=NF;i++){g=$i; sub(/^.*\//,"",g); sub(/\.Aligned\.sortedByCoord\.out\.bam$/,"",g); printf "\t" g} printf "\n"; next} NR>2{printf "%s", $1; for(i=7;i<=NF;i++) printf "\t%s", $i; printf "\n"}' "$OUTDIR/featureCounts_counts.txt" > "$OUTDIR/featureCounts_counts_matrix.tsv"
+
+```
 
 **Raw counts vs normalized expression units**
 
@@ -602,28 +641,26 @@ Raw read counts tell you how many sequencing reads mapped to each gene, and they
 MultiQC is a tool that scans the output files from many bioinformatics programs (such as FastQC, fastp, STAR, and featureCounts) and compiles them into one interactive HTML report. Instead of checking each tool’s results separately, MultiQC gives you a single overview of sample quality, trimming performance, alignment statistics, and counting summaries making it much easier to detect problems or compare samples side-by-side.
 
 ```
-# (Optional) if MultiQC isn't preinstalled on VSC
-conda install -c bioconda multiqc
+module load MultiQC/1.11-foss-2021a
 
-# Define input and output directories
 FASTP_DIR="$VSC_DATA/Bioinfo_course/MS_microglia_fastp"
 STAR_DIR="$VSC_DATA/Bioinfo_course/MS_microglia_STAR_aligned"
 FC_DIR="$VSC_DATA/Bioinfo_course/MS_microglia_featureCounts"
 MQC_OUT="$VSC_DATA/Bioinfo_course/MS_microglia_MultiQC"
 
-# Create output directory
+
 mkdir -p "$MQC_OUT"
 
-# Run MultiQC across all stages
+
 multiqc -o "$MQC_OUT" -n multiqc_all "$FASTP_DIR" "$STAR_DIR" "$FC_DIR"
 
 ```
 
 Outputs:
 
-A single HTML summary:
+You can check the **multiqc_all.html** output file by going to Ondemand, clicking on **Files** tab at top of the page and opening the Data directory and exploring the file in **Bioinfo_course folder** under **MS_microglia_MultiQC**
 
-$VSC_DATA/Bioinfo_course/MS_microglia_MultiQC/multiqc_all.html
+Here is also an example multiQC output file:
 
 <a href="assets/multiqc_all_1.html" target="_blank">**Interactively browse read qualities, trimming stats, alignment rates, and featureCounts summaries!**</a>
 
@@ -633,7 +670,6 @@ Question: Looking at the MultiQC report summary for all your samples:
 2. What criteria did you use to flag that sample as unusual?  
 3. What are plausible **biological** or **technical** reasons for this deviation?  
 4. Based on what you see in the report, would you exclude this sample from your downstream differential expression analysis? Why or why not?
-
 
 ## Step 9 - Differential expression analysis (DEA) and Enrichment analysis (GSEA) {#step-9-differential-expression-analysis-dea-and-enrichment-analysis-gsea}
 
@@ -653,48 +689,157 @@ Question: Imagine you have 10 biological replicates per condition, collected at 
 Based on this study design, which differential expression analysis tool would be the most appropriate (DESeq2, edgeR, or limma-voom), and why?
 </span>
 
-To start the analysis, Stop the shell job and Launch RStudio Server (4 cores).
+** A mini-diagram of DESeq2 DEA**
+
+```scss
+
+Raw counts
+    │
+    ▼
+Normalization (size factors)
+    │
+    ▼
+Dispersion estimation (how much genes vary)
+    │
+    ▼
+Model fitting (compare MS vs Control)
+    │
+    ▼
+Statistical test (Wald test)
+    │
+    ▼
+Significant difference?
+    ├── Yes → DEG (uses log2FC + padj)
+    └── No  → Not a DEG
+```
+
+**How DESeq2 Normalizes RNA-seq Counts**
+
+DESeq2 uses a method called **median-of-ratios normalization** by calculating **size factor**, wich can correct the differences in sequencing depth between samples so they can be fairly compared.
+
+**Step1**- Create a reference for each gene
+
+For each gene, DESeq2 calculates the **geometric mean** of its counts across all samples.
+
+Example:
+Gene A counts = 10, 20, 5
+Geometric mean = √[10 × 20 × 5] ≈ 10.
+
+This gives a “typical” value for each gene.
+
+**Step2**- Compare each sample to this reference
+For every gene in a sample:
+```ini
+ratio = (gene count in sample) / (geometric mean of that gene)
+```
+Example for sample 1:
+
+Gene A = 10 → ratio = 10/10 = 1
+
+Gene B = 100 → ratio = 100/50 = 2
+
+Gene C = 5 → ratio = 5/10 = 0.5
+
+This tells us whether the sample has more or fewer reads than “typical.”
+
+**Step3**- Take the median ratio → this becomes the size factor
+DESeq2 takes the median of all ratios for a sample.
+
+Example: ratios = {1, 2, 0.5}
+Sorted = {0.5, 1, 2}
+Median = 1
+
+This number (size factor) tells how much bigger or smaller the library is compared to the others.
+
+A size factor > 1 → sample has more reads than average
+
+A size factor < 1 → sample has fewer reads
+
+**Step4**- Normalize the counts
+
+Finally:
+
+```matlab
+normalized count = raw count / size factor
+```
+Example:
+
+Raw count = 200
+
+Size factor = 2
+
+Normalized count = 200 / 2 = 100
+
+Now samples with bigger or smaller sequencing depth are adjusted to the same scale.
+
+This way, we correct the sequencing depth without being distorted by highly expressed genes. It assumes most genes do not change dramatically between samples and makes gene counts comparable across samples before statistical testing.
+
+
+**For starting the next steps, first stop the current shell job through onDemand "My Interactive session" tab.**
+
+- Launch **RStudio Server** on the **wICE cluster** using **R/4.4.1-gfbf-2023b** through onDemand VSC portal.  
+- Load the module: `R-bundle-Bioconductor` (for additional Bioconductor packages).
+- **Partition:** `batch_icelake`
+- **Account:** `lp_h_edu_bioinformatics2025`
+- **Walltime:** 1 hour
+- **Number of nodes:** 1
+- **Processes per node:** 4
+- **Cores per task:** 1
+- **Memory per core:** 3400 MB
+- **Reservation:** ``
 
 <img src="assets/Rstudio_interactive.png" alt="Rstudio_interactive" width="800">
 <img src="assets/Rstudio_interactive3.png" alt="Rstudio_interactive3" width="800">
 
-Open a new R script once the R session is started and follo the stepsas below:
+Open a new R script once the R session is started and follow the steps as below:
 
 **Install packages only if they are not already installed**
 
-```
-# List of required packages
-packages <- c(
-  "DESeq2", "readr", "dplyr", "ggplot2", "ggrepel", "apeglm",
-  "biomaRt", "clusterProfiler", "msigdbr", "org.Hs.eg.db", "enrichplot"
-)
+```r
+# Load the required packages
 
-# Install missing packages
-installed <- rownames(installed.packages())
-to_install <- packages[!(packages %in% installed)]
-
-if (length(to_install) > 0) {
-  message("Installing missing packages: ", paste(to_install, collapse = ", "))
-  BiocManager::install(to_install, ask = FALSE)
-}
-
-# Load packages quietly
-suppressPackageStartupMessages({
-  lapply(packages, library, character.only = TRUE)
-})
+library(DESeq2)          # Differential gene expression analysis
+library(readr)           # Fast reading of tabular data
+library(dplyr)           # Data manipulation (filter, select, mutate, etc.)
+library(ggplot2)         # Data visualization using the grammar of graphics
+library(ggrepel)         # Improved label placement for ggplot2
+library(biomaRt)         # Gene annotation and ID mapping via Ensembl
+library(clusterProfiler) # Functional enrichment (GO, KEGG, pathways)
+library(msigdbr)         # Access to MSigDB gene sets
+library(org.Hs.eg.db)    # Human gene annotation database
+library(enrichplot)      # Visualization of enrichment analysis results  
 
 ```
 **Setting up input and output directories in R**
-```
-counts_path <- file.path(Sys.getenv("VSC_DATA"),
-                         "Bioinfo_course/MS_microglia_featureCounts/featureCounts_counts_matrix.tsv")
-out_dir <- file.path(Sys.getenv("VSC_DATA"), "Bioinfo_course/MS_microglia_DEA")
+```r
+# -------------------------------------------------------------
+# Define input and output paths for the analysis
+# -------------------------------------------------------------
+
+# Build the full path to the featureCounts matrix:
+# - Sys.getenv("VSC_DATA") retrieves your VSC_DATA environment variable,
+#   which points to your personal data directory on the cluster.
+# - file.path() safely constructs a valid path across systems.
+counts_path <- file.path(
+  Sys.getenv("VSC_DATA"),
+  "Bioinfo_course/MS_microglia_featureCounts/featureCounts_counts_matrix.tsv"
+)
+
+# Define an output directory where all DEA results and plots will be saved
+out_dir <- file.path(
+  Sys.getenv("VSC_DATA"),
+  "Bioinfo_course/MS_microglia_DEA"
+)
+
+# Create the output directory if it does not exist
+# - recursive = TRUE creates parent folders if needed  
+# - showWarnings = FALSE suppresses messages if the folder already exists
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 ```
 
 **Building the DESeq2 Dataset and Running Differential Expression**
 
-```
+```r
 # ---- Load gene-level count matrix from featureCounts ----
 counts <- read_tsv(counts_path)           # Read the TSV counts file into R (first column = gene, others = samples)
 
@@ -723,9 +868,64 @@ dds <- DESeqDataSetFromMatrix(
 
 # ---- Filter out very lowly-expressed genes ----
 dds <- dds[rowSums(counts(dds)) >= 10, ]  # Keep genes with at least 10 total counts across all samples
+```
 
+```r
 # ---- Run the full DESeq2 pipeline ----
 dds <- DESeq(dds)                         # Normalization, dispersion estimation, and model fitting
+```
+
+
+```r
+# ---- QC: Check normalization & dispersion ----
+
+# Plot dispersion estimates
+plotDispEsts(dds)
+```
+<img src="assets/Disp_plot.png" alt="Disp_plot" width="800">
+
+**Dispersion Plot** shows:
+
+**Black dots** → raw observed dispersion for each gene
+
+**Red curve** → fitted dispersion trend (what DESeq2 expects)
+
+**Blue circles** → final shrunken dispersions used in testing. DESeq2 shrinks noisy gene-wise estimates toward the fitted trend by stabilizing the variance estimates, it prevents overly large dispersion values for low-count or unstable genes.
+
+low-count genes = more variability
+
+high-count genes = more stable
+
+A few black dots lie at extremely low dispersion values (near 1e−8). These typically correspond to housekeeping genes, stably expressed genes, or even technical artifacts with extremely high counts.
+
+
+```r
+# MA plot to visualize normalization effects
+plotMA(dds, ylim = c(-10, 10))
+```
+<img src="assets/MAplot.png" alt="MAplot" width="800">
+
+**MA plot:**
+
+**M** = log2 fold change (vertical axis)
+
+**A** = average expression (mean of normalized counts, horizontal axis)
+
+**Grey points** = all genes
+
+**Blue points** = significantly differentially expressed genes (DEGs), Genes with positive log2FC (blue above) are upregulated, and genes with negative log2FC (blue below) are downregulated.
+
+**1- Variability is higher for low-count genes**
+A wide “fan-shaped” spread of log2FC values; this is because low-count genes are noisy, even small count differences produce large fold changes
+
+**2-High-count genes (right side) have stable FC estimates**
+Where counts are high (>1,000): Points cluster tightly around 0, Very few extreme log2FC values. This means that highly expressed genes have more reliable fold-change estimates, variance is low because counts are high.
+
+
+```r
+# PCA plot of normalized counts
+vsd <- vst(dds)     # or use rlog(dds) for smaller datasets
+plotPCA(vsd, intgroup = "condition")
 
 # ---- Extract differential expression results ----
 res <- results(
@@ -734,110 +934,273 @@ res <- results(
   independentFiltering = FALSE            # Keep all genes (no automatic filtering by mean counts)
 )
 ```
+<img src="assets/PCAplot.png" alt="PCAplot" width="600">
+
+This PCA plot shows how your samples group based on overall gene-expression patterns after normalization and variance-stabilizing transformation.
+
+✔ Controls are relatively homogenous
+✔ MS samples differ strongly from each other
+✔ High MS heterogeneity reduces statistical power
+✔ You may find fewer DEGs
+✔ more samples are required for a higher statistical power
 
 **Gene Annotation with Ensembl (biomaRt)**
 
 After computing differential expression, the results contain gene identifiers in Ensembl ID format (e.g., ENSG00000141510.12). These identifiers are accurate but not user-friendly, so the next step is to annotate them with human-readable gene symbols (e.g., TP53). Using the biomaRt package, we query the Ensembl database, retrieve gene symbols for all genes in the results, remove version suffixes (e.g., .12), and merge the annotations back into the results table. The output is an annotated results file that is easier to interpret and suitable for downstream visualization and reporting.
 
-```
-# annotate
-mart <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl")
-gene_ids <- gsub("\\..*", "", rownames(res))
-annot <- getBM(attributes = c("ensembl_gene_id","external_gene_name"),
-               filters = "ensembl_gene_id", values = gene_ids, mart = mart)
-res_tbl <- as.data.frame(res); res_tbl$ensembl_gene_id <- gsub("\\..*", "", rownames(res_tbl))
+```r
+# -------------------------------
+# Gene annotation
+# -------------------------------
+
+# (Optional) Annotation using biomaRt — disabled here to save time
+# mart <- useEnsembl("ensembl", dataset = "hsapiens_gene_ensembl", GRCh = 38)
+#
+# Extract Ensembl gene IDs without version numbers (e.g., ENSG000001... from ENSG000001... .12)
+# gene_ids <- gsub("\\..*", "", rownames(res))
+#
+# Retrieve gene names (HGNC symbols) from Ensembl
+# annot <- getBM(
+#   attributes = c("ensembl_gene_id", "external_gene_name"),
+#   filters    = "ensembl_gene_id",
+#   values     = gene_ids,
+#   mart       = mart
+# )
+
+# Instead of querying Ensembl, load a precomputed annotation table 
+# (recommended during workshops to save time and avoid server delays)
+annot <- read.csv('/scratch/leuven/377/vsc37707/Bioinfo_course_scratch/annot.csv')
+
+# Convert DESeq2 results to a data frame and extract pure Ensembl IDs
+res_tbl <- as.data.frame(res)
+res_tbl$ensembl_gene_id <- gsub("\\..*", "", rownames(res_tbl))
+
+# Merge DE results with annotation table (keeps all DESeq2 rows)
 res_annot <- merge(res_tbl, annot, by = "ensembl_gene_id", all.x = TRUE)
+
+# Order genes by adjusted p-value (most significant first)
 res_annot <- res_annot[order(res_annot$padj), ]
+
+# Save annotated differential expression results as a TSV file
 readr::write_tsv(res_annot, file.path(out_dir, "deseq2_results_annotated.tsv"))
+
 ```
 
 **Identifying Differentially Expressed Genes (DEGs) and Creating a Volcano Plot**
 
 Once the differential expression results are annotated, the next step is to extract the significant differentially expressed genes (DEGs). This is done by applying thresholds on both statistical significance (adjusted p-value or FDR) and effect size (log₂ fold change). In this tutorial, genes with padj < 0.05 and -0.5 <log₂FC > 0.5 are considered DEGs. After filtering, the DEG list is saved as a TSV file for downstream functional analysis.
 
+In differential expression analysis (DEA), the p-value tells you how likely it is that the difference in gene expression you observe happened just by chance, assuming there is no real difference between your conditions (null hypothesis). A small p-value means the change is unlikely to be random and may be biologically meaningful.
+
+However, in RNA-seq experiments, we test thousands of genes at the same time. When doing so, some genes will appear significant purely by chance. This is called the multiple testing problem. To fix this, we use False Discovery Rate (FDR) correction. The FDR estimates how many of the genes you call “significant” are expected to be false positives.
+
+The adjusted p-value (padj) is the p-value after applying FDR correction (commonly using the Benjamini–Hochberg method). It gives a more reliable measure of significance when many genes are tested. In practice, you should use padj instead of the raw p-value to decide whether a gene is truly differentially expressed. A common cutoff is padj < 0.05, meaning that no more than about 5% of the genes you call significant are expected to be false discoveries.
+
 To visualize the global expression changes between conditions, we generate a volcano plot, which displays each gene based on its log₂ fold change (x-axis) and statistical significance (–log₁₀ adjusted p-value, y-axis). Genes are categorized as Up, Down, or Not Significant, and the top 10 most significant genes are labeled. This plot provides an intuitive overview of the direction, magnitude, and significance of differential expression across the whole transcriptome.
 
 <span style="color:purple; font-weight:600;">
-Question: RNA-seq differential expression results often show both a p-value and an adjusted p-value (padj) for each gene.
-Based on your understanding of multiple testing in large datasets, explain the difference between the p-value and the adjusted p-value.
-Which one should be used to decide whether a gene is truly differentially expressed, and why?
+Question: A gene has a p-value of 0.002 but a padj of 0.10. What does this tell you about the gene’s significance, and why is there a difference between the two numbers?
 </span>
 
-```
-# DEGs
-lfc_thr <- 0.5; padj_thr <- 0.05
-DEGs <- subset(res_annot, !is.na(padj) & padj < padj_thr & abs(log2FoldChange) > lfc_thr)
-readr::write_tsv(DEGs, file.path(out_dir, sprintf("DEGs_MS_vs_Control_padj%.2f_LFC%.2f.tsv", padj_thr, lfc_thr)))
+```r
+# -----------------------------------------------
+# Define thresholds for selecting significant DEGs
+# -----------------------------------------------
+lfc_thr  <- 0.5      # Minimum absolute log2 fold-change considered biologically relevant
+padj_thr <- 0.05     # Significance threshold after multiple-testing correction
 
-# Volcano
+# Filter DESeq2 results for significant differentially expressed genes (DEGs)
+DEGs <- subset(
+  res_annot,
+  !is.na(padj) &                     # remove genes with missing adjusted p-values
+  padj < padj_thr &                  # statistically significant genes
+  abs(log2FoldChange) > lfc_thr      # genes with sufficient effect size
+)
+
+# Save DEG table for downstream analyses
+readr::write_tsv(
+  DEGs,
+  file.path(out_dir,
+            sprintf("DEGs_MS_vs_Control_padj%.2f_LFC%.2f.tsv", padj_thr, lfc_thr))
+)
+
+# -----------------------------------------------
+# Volcano plot data preparation
+# -----------------------------------------------
 df <- res_annot
-if (!"external_gene_name" %in% names(df)) df$external_gene_name <- NA_character_
+
+# Ensure a gene symbol column exists (avoid errors if missing)
+if (!"external_gene_name" %in% names(df))
+  df$external_gene_name <- NA_character_
+
+# Classify each gene as Up, Down, or Not Significant
 df$status <- "NotSig"
 df$status[!is.na(df$padj) & df$padj < padj_thr & df$log2FoldChange >  lfc_thr] <- "Up"
 df$status[!is.na(df$padj) & df$padj < padj_thr & df$log2FoldChange < -lfc_thr] <- "Down"
-df$mlog10padj <- -log10(df$padj); df$mlog10padj[!is.finite(df$mlog10padj)] <- NA
-sig <- df[!is.na(df$padj) & df$padj < padj_thr & abs(df$log2FoldChange) > lfc_thr, ]
+
+# Transform adjusted p-values for better visualization
+df$mlog10padj <- -log10(df$padj)
+df$mlog10padj[!is.finite(df$mlog10padj)] <- NA   # remove -Inf for padj = 0
+
+# Select the top 10 most significant DEGs for labeling
+sig   <- df[!is.na(df$padj) & df$padj < padj_thr & abs(df$log2FoldChange) > lfc_thr, ]
 top10 <- head(sig[order(sig$padj, -abs(sig$log2FoldChange)), ], 10)
 
+# -----------------------------------------------
+# Volcano plot: visualize significance vs effect size
+# -----------------------------------------------
 p <- ggplot(df, aes(x = log2FoldChange, y = mlog10padj, color = status)) +
-  geom_point(size = 1.3, alpha = 0.8, na.rm = TRUE) +
-  geom_vline(xintercept = c(-lfc_thr, lfc_thr), linetype = "dashed") +
-  geom_hline(yintercept = -log10(padj_thr), linetype = "dashed") +
-  ggrepel::geom_text_repel(data = top10, aes(label = external_gene_name), size = 3) +
+  geom_point(size = 1.3, alpha = 0.8, na.rm = TRUE) +            # scatter points
+  geom_vline(xintercept = c(-lfc_thr, lfc_thr), linetype = "dashed") +  # LFC threshold lines
+  geom_hline(yintercept = -log10(padj_thr), linetype = "dashed") +      # p-value threshold line
+  ggrepel::geom_text_repel(                                        # label top significant genes
+    data = top10, aes(label = external_gene_name), size = 3
+  ) +
   scale_color_manual(values = c(NotSig = "grey70", Up = "red", Down = "blue")) +
-  labs(x = "log2 fold change", y = expression(-log[10]("adjusted p-value")),
-       color = "Status", title = "MS vs Control — Volcano") +
+  labs(
+    x = "log2 fold change",
+    y = expression(-log[10]("adjusted p-value")),
+    color = "Status",
+    title = "MS vs Control — Volcano Plot"
+  ) +
   theme_minimal(base_size = 12)
 
+p
+
+# Save the volcano plot as a high-resolution PNG
 ggsave(file.path(out_dir, "volcano_DEGs.png"), p, width = 7, height = 5, dpi = 300)
+
 ```
 <img src="assets/DEGs_Volcano.png" alt="DEGs_Volcano" width="600">
+
+**What log2 Fold Change (log2FC) Tells Us**
+
+log2FC measures how much expression changes on a log base 2 scale.
+
+| log2FC | Meaning                | Fold change     |
+| ------ | ---------------------- | --------------- |
+| +1     | Upregulated            | 2× higher       |
+| +2     | Strongly upregulated   | 4× higher       |
+| –1     | Downregulated          | 2× lower        |
+| –2     | Strongly downregulated | 4× lower        |
+| 0      | No change              | same expression |
+
+**Putting it all together**
+
+A **DEG** is a gene that shows:
+
+1- A large enough change in expression (log2FC threshold)
+
+2- Consistent differences across replicates (low dispersion)
+
+3- A statistically significant difference (low padj)
+
+| Gene  | log2FC | padj  | Interpretation             |
+| ----- | ------ | ----- | -------------------------- |
+| GeneA | +1.5   | 0.001 | Strongly upregulated in MS |
+| GeneB | –2.0   | 0.03  | Downregulated in MS        |
+| GeneC | 0.2    | 0.8   | No meaningful change       |
+
+
 
 **Gene Set Enrichment Analysis (GSEA), Hallmark Pathways**
 
 After identifying differentially expressed genes, we want to understand which biological pathways are systematically up- or down-regulated. Gene Set Enrichment Analysis (GSEA) evaluates genome-wide ranked statistics (e.g., Wald statistics or log₂ fold changes) to determine whether predefined gene sets show significant enrichment at the top or bottom of the ranked list. Unlike over-representation analysis, GSEA does not require an arbitrary DEG cutoff and instead uses all genes, making it more sensitive and biologically interpretable.
 In this step, we first convert gene symbols to Entrez IDs, which are required by many pathway databases. Then we build a ranked gene list, load the MSigDB Hallmark gene sets, and run GSEA. The results are saved to disk along with visualizations: a plot of the top enriched pathways and an enrichment map showing relationships among enriched terms.
 
-```
-# GSEA (Hallmark)
+```r
+# -----------------------------------------------
+# GSEA using Hallmark gene sets (MSigDB)
+# -----------------------------------------------
+
+# Extract gene symbols from annotated DESeq2 results
 symbols <- res_annot$external_gene_name
-entrez  <- mapIds(org.Hs.eg.db, keys = symbols, keytype = "SYMBOL", column = "ENTREZID", multiVals = "first")
+
+# Map gene symbols to Entrez IDs (required for many enrichment tools)
+entrez <- mapIds(
+  org.Hs.eg.db,
+  keys     = symbols,
+  keytype  = "SYMBOL",
+  column   = "ENTREZID",
+  multiVals = "first"   # if multiple Entrez IDs, keep the first match
+)
+
+# Store Entrez IDs in the results table
 res_annot$ENTREZID <- entrez
 
+# Choose ranking statistic:
+# - Prefer the Wald statistic (`stat`) if available
+# - Otherwise fall back to log2 fold change
 score <- if (!all(is.na(res_annot$stat))) res_annot$stat else res_annot$log2FoldChange
 
-rank_df <- tibble::tibble(ENTREZID = res_annot$ENTREZID, score = score) |>
-  dplyr::filter(!is.na(ENTREZID), is.finite(score)) |>
+# Build a ranking table: one score per Entrez ID
+rank_df <- tibble::tibble(
+    ENTREZID = res_annot$ENTREZID,
+    score    = score
+  ) |>
+  dplyr::filter(
+    !is.na(ENTREZID),        # keep only genes with valid Entrez IDs
+    is.finite(score)         # remove NA / Inf scores
+  ) |>
   dplyr::group_by(ENTREZID) |>
-  dplyr::summarise(score = score[which.max(abs(score))], .groups = "drop")
+  dplyr::summarise(
+    # if multiple rows per Entrez ID, keep the one with the largest absolute score
+    score = score[which.max(abs(score))],
+    .groups = "drop"
+  )
 
-ranks <- sort(setNames(rank_df$score, rank_df$ENTREZID), decreasing = TRUE)
+# Create a named numeric vector of ranked genes (required format for GSEA)
+ranks <- sort(
+  setNames(rank_df$score, rank_df$ENTREZID),
+  decreasing = TRUE
+)
 
-m_h <- msigdbr(species = "Homo sapiens", category = "H") |>
-  dplyr::select(gs_name, entrez_gene)
+# Load Hallmark gene sets from MSigDB (H collection)
+m_h <- msigdbr(
+    species  = "Homo sapiens",
+    category = "H"
+  ) |>
+  dplyr::select(gs_name, entrez_gene)   # pathway name + Entrez gene ID
 
-set.seed(42)
-gseaH <- GSEA(ranks, TERM2GENE = m_h, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500, verbose = FALSE)
+# Run GSEA using the Hallmark pathways
+set.seed(42)  # set seed for reproducibility
+gseaH <- GSEA(
+  ranks,
+  TERM2GENE   = m_h,      # mapping from gene set to Entrez IDs
+  pAdjustMethod = "BH",   # Benjamini-Hochberg multiple-testing correction
+  minGSSize   = 10,       # minimum size of a gene set
+  maxGSSize   = 500,      # maximum size of a gene set
+  verbose     = FALSE
+)
 
-readr::write_tsv(as.data.frame(gseaH@result), file.path(out_dir, "GSEA_Hallmark_results.tsv"))
+# Save full GSEA Hallmark results to a TSV file
+readr::write_tsv(
+  as.data.frame(gseaH@result),
+  file.path(out_dir, "GSEA_Hallmark_results.tsv")
+)
 
+# -----------------------------------------------
+# Plot top Hallmark pathways from GSEA
+# -----------------------------------------------
 png(file.path(out_dir, "GSEA_Hallmark_top4.png"), width = 900, height = 700)
-print(enrichplot::gseaplot2(gseaH, geneSetID = 1:4, title = "Top Hallmark pathways"))
-dev.off()
+print(
+  enrichplot::gseaplot2(
+    gseaH,
+    geneSetID = 1:4,              # plot the top 4 enriched Hallmark pathways
+    title     = "Top Hallmark pathways"
+  )
+)
+dev.off()  # close the graphics device and write the PNG file
 
-gseaH2 <- pairwise_termsim(gseaH)
-png(file.path(out_dir, "GSEA_Hallmark_emap.png"), width = 1200, height = 900)
-print(emapplot(gseaH2, showCategory = 10))
-dev.off()
 ```
 <img src="assets/GSEA.png" alt="GSEA" width="700">
   
-	 
+
+** Do not forget to cancel your interactive job after completing the tutorial at the end of WZ1 session.**
 
 
+## 📝 Quick Feedback
 
-
-
-
-
-  
+How helpful was this tutorial?
+Have feedback?  
+👉 **[Click here](https://forms.gle/SmYewj3hQVYYX6tk9)**
