@@ -154,13 +154,16 @@ For more information about the VSC system and its usage, please see:
 
 ## Step 1 - Access to VSC & Interactive Sessions {#step-1-access-to-vsc-interactive-sessions}
 
-**If you are enrolled in the Bioinformatics course, you only need to request a VSC account. After your account is approved, go to your VSC account, search for the lp_h_edu_bioinformatics2025 group, and request to join it. You do not need to request computing credits to run the analyses; they are already provided.**
-
-However, if you are not a student and are following this tutorial outside the Bioinformatics course, you must request a VSC account and apply for introductory credits to run your own jobs. If you manage a research group, apply for project credits instead to get computing resources for your team.
+Request a VSC account and apply for introductory credits to run your own jobs. If you manage a research group, apply for project credits instead to get computing resources for your team.
 
 [Apply for your VSC account](https://docs.vscentrum.be/accounts/vsc_account.html#applying-for-your-vsc-account), Select **Hasselt University** when prompted.
 
-[Request introduction credits](https://admin.kuleuven.be/icts/onderzoek/hpc/request-introduction-credits)
+[Request introduction credits for your individual analysis](https://admin.kuleuven.be/icts/onderzoek/hpc/request-introduction-credits)
+
+[Request project credits if your project analysis lasts more than 6 months or multiple researchers in your research group require to analyse their data at VSC](https://admin.kuleuven.be/icts/onderzoek/hpc/request-project-credits)
+
+[Once your project group has been created and you have received your allocated core-hour credits for that and if your generating data exceeds 76 GB, you or your superviser should request staging storage for your group at VSC by specifying the required storage](https://admin.kuleuven.be/icts/onderzoek/hpc/hpc-storage)
+
 
 Login to OnDemand, and click on **Partner organization** and select **Hasselt University**: [VSC OnDemand Portal](https://ondemand.hpc.kuleuven.be/)
 
@@ -170,14 +173,12 @@ Start **Interactive Shell** with:
 
 - Cluster: *Wice*
 - Partition: *interactive*
-- Account:  *lp_h_edu_bioinformatics2025* or *your own intro_VSC/project account*
+- Account:  *your own intro_VSC/project account*
 - Number of hours: *2 h* or more
 - Number of nodes: *1*
-- Number of processes per node: *18*
-- Number of cores per each task: *18*
-- Required memory per core in megabytes: *3455 MB*
-- Reservation: *course_h_edu_bioinformatics2025*
-- ✅ I would like to receive an email when the session starts
+- Number of processes per node: *8*
+- Number of cores per each task: *8*
+- Required memory per core in megabytes: *7500 MB*
 
 ## Step 2 - Connect, workspace, data {#step-2-connect-workspace-data}
 
@@ -487,22 +488,32 @@ samtools view -H yourfile.bam
 These commands let you quickly verify that the alignments look correct without scrolling through the entire file.
 
 **Example interpretation of a BAM file**
+```less
+SRR6849240.5225765   0   1   14518   0   76M   *   0   0   CCCCGC...GTCA   AAAAAE...E/E/   NH:i:8  HI:i:1  AS:i:74  nM:i:0
 ```
-SRR6849240.12345	16	chr1	10542	255	76M	*	0	0	ACTG…	AAAA…	NM:i:0
-```
-**Means:**
+**SRR6849240.5225765** → Read name
 
-This read is named **SRR6849240.12345**
+**0** → FLAG = primary alignment, forward strand
 
-FLAG **16** → read maps to reverse strand
+**1** → Chromosome 1
 
-It aligned to chromosome 1, position **10542**
+**14518** → Alignment start position on chr1
 
-CIGAR **76M** → 76 bases matched the reference (no indels)
+**0** (MAPQ) → Low mapping quality → read maps to many locations
 
-MAPQ **255** → unique, high-confidence alignment
+**76M** → CIGAR: 76 bases match perfectly
 
-**NM:i:0** → 0 mismatches from the reference
+**SEQ** → Read sequence (76 bp)
+
+**QUAL** → Base quality scores (ASCII encoded)
+
+**NH:i:8** → This read aligns to 8 different genomic locations (multi-mapped)
+
+**HI:i:1** → This is the 1st of those 8 reported alignments (the primary one)
+
+**AS:i:74** → Alignment score = 74 (strong alignment)
+
+**nM:i:0** → Number of mismatches = 0 (perfect match)
 
 
 ## Step 6 - Strandness check {#step-6-strandness-check}
