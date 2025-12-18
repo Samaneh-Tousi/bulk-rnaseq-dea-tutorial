@@ -1029,22 +1029,13 @@ After computing differential expression, the results contain gene identifiers in
 # -------------------------------
 
 # (Optional) Annotation using biomaRt — disabled here to save time
-# mart <- useEnsembl("ensembl", dataset = "hsapiens_gene_ensembl", GRCh = 38)
-#
-# Extract Ensembl gene IDs without version numbers (e.g., ENSG000001... from ENSG000001... .12)
-# gene_ids <- gsub("\\..*", "", rownames(res))
-#
-# Retrieve gene names (HGNC symbols) from Ensembl
-# annot <- getBM(
-#   attributes = c("ensembl_gene_id", "external_gene_name"),
-#   filters    = "ensembl_gene_id",
-#   values     = gene_ids,
-#   mart       = mart
-# )
+mart <- useEnsembl("ensembl", dataset = "hsapiens_gene_ensembl", GRCh = 38)
 
-# Instead of querying Ensembl, load a precomputed annotation table 
-# (recommended during workshops to save time and avoid server delays)
-annot <- read.csv('/scratch/leuven/377/vsc37707/Bioinfo_course_scratch/annot.csv')
+# Extract Ensembl gene IDs without version numbers (e.g., ENSG000001... from ENSG000001... .12)
+gene_ids <- gsub("\\..*", "", rownames(res))
+
+# Retrieve gene names (HGNC symbols) from Ensembl
+annot <- getBM(attributes = c("ensembl_gene_id", "external_gene_name"), filters = "ensembl_gene_id", values = gene_ids, mart = mart)
 
 # Convert DESeq2 results to a data frame and extract pure Ensembl IDs
 res_tbl <- as.data.frame(res)
